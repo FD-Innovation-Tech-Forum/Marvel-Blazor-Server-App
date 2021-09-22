@@ -1,4 +1,4 @@
-# Marval-Blazor-Server-App
+# Marvel-Blazor-Server-App
 Simple Blazor Server App using the Marvel API
 
 Live running sample: https://redeyeballmarvel.azurewebsites.net/
