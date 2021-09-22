@@ -1,0 +1,219 @@
+﻿@page "/"
+
+@using System.Text.Json
+@using Microsoft.Extensions.Configuration
+@using System.Security.Cryptography
+@using System.Text
+@using Marvel.Models
+@using System.Collections
+@using System
+@using System.Net.Http
+@using System.Security.Cryptography
+@using System.Text
+@using System.Text.Json
+@using System.Threading.Tasks
+@using Marvel.Models
+
+@inject IConfiguration Config
+
+<h1 class="text-center text-primary">First Digital - Marvel Search Engine</h1>
+<div class="text-center">
+    <div class="p-2">
+        <input class="form-control form-control-lg w-75 mx-auto mt-4" placeholder="Character name" @bind-value="_searchTerm" />
+    </div>
+    <div class="p-2">
+        <button class="btn btn-primary btn-lg" @onclick="HandleSearch">FD - Search the Marvel API</button>
+    </div>
+    <div class="p-2">
+        <p><b><i>@progressValue</i></b></p>
+    </div>
+</div>
+
+@if (_searchResponse != null)
+{
+    <p class="text-center">@_searchResponse.AttributionText</p>
+    <div class="container">
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3">
+            @if (_searchResponse.Data.Results.Count > 0)
+                {
+            @foreach (var result in _searchResponse.Data.Results)
+                    {
+                    <div class="col mb-4">
+                        <div class="card h-100">
+                            <img src="@($"{result.Thumbnail.Path}.{result.Thumbnail.Extension}")" class="card-img-top" style="object-fit: cover; height: 300px">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <button type="button" class="close" @onclick="(() => CharacterInfo(result.Id))">
+                                        <span aria-hidden="true" title="View Character Info">@result.Name</span>
+                                    </button>
+                                </h5>
+                            </div>
+                        </div>
+                    </div>
+                    }
+                }
+                else
+                {                
+                    <div class="col mb-4">
+                         <div class="card h-100">
+                             <p class="text-center">No Data found for @_searchTerm, try again Bru!</p>
+                         </div>
+                     </div>
+                }
+        </div>
+    </div>
+}
+
+@if (ShowPopup)
+{
+    <div class="modal" tabindex="-1" style="display: block" role="dialog">
+        <div class="modal-dialog" style="overflow-y: scroll;   margin-top: 50px; margin-bottom:50px;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Character Info </h3>
+                    <!-- Button to close the popup -->
+                    <button type="button" class="close" @onclick="ClosePopup">
+                        <span aria-hidden="true">X</span>
+                    </button>
+                </div>
+                <!-- Edit form for the current record -->
+                <div class="modal-body">
+                    @foreach (var result in _characterInfoResponse.Data.Results)
+                    {
+                    <div class="col mb-4">
+                        <div class="card h-100">
+                            <img src="@($"{result.Thumbnail.Path}.{result.Thumbnail.Extension}")" class="card-img-top" style="object-fit: cover; height: 300px">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <span class="fa fa-trash-alt">@result.Name</span>
+                                </h5>
+                                <p class="card-text">
+                                    @result.Description
+                                </p>
+                            </div>
+                            <div class="card-footer">
+                                <h5 class="card-title">
+                                    <span class="fa fa-trash-alt">Character Comics</span>
+                                </h5>
+
+                                @foreach (var subresult in result.Comics.Items)
+                                    {
+                                <p class="card-subtitle">
+                                    @subresult.Name
+                                </p>
+                                    }
+                            </div>
+                        </div>
+                    </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="close" @onclick="ClosePopup">
+                        <span aria-hidden="true">close</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+}
+@if (Showloading)
+{
+    <div class="text-center"><img src="img/da734b28921021.55d95297d71f4.gif" style="width: 200px;"/></div>
+}
+
+@code
+{
+    private bool ShowPopup = false;
+    private bool Showloading = false;
+    public string _searchTerm;
+    public static string _apiKey = "<your API Key here>";
+    public static string _pvtapiKey = "<your Private API key here>";
+    private string progressValue { get; set; }
+
+    private MarvelSearchResult _searchResponse;
+    private CharacterInfoResponse _characterInfoResponse;
+
+
+    private async Task HandleSearch()
+    {
+        progressValue = "Loading...";
+        Showloading = true;
+        string hdrDate = "1"; //System.DateTime.Now.ToUniversalTime().ToString("R");
+
+        byte[] encodedPassword = new UTF8Encoding().GetBytes(hdrDate + _pvtapiKey + _apiKey);
+        byte[] hash = ((HashAlgorithm)CryptoConfig.CreateFromName("MD5")).ComputeHash(encodedPassword);
+
+        string encoded = BitConverter.ToString(hash).Replace("-", string.Empty).ToLower();
+
+        var url = $"characters?nameStartsWith={_searchTerm}&ts={hdrDate}&apikey={_apiKey}&hash={encoded}";
+        HttpClient client = new HttpClient();
+        client.BaseAddress = new Uri("https://gateway.marvel.com:443/v1/public/");
+
+        if (_searchTerm != null)
+        {
+            var response = await client.GetAsync(url);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseStream = await response.Content.ReadAsStreamAsync();
+                var options = new JsonSerializerOptions()
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+                _searchResponse = await JsonSerializer.DeserializeAsync<MarvelSearchResult>(responseStream, options);
+            }
+            else
+            {
+                _searchResponse = null;
+            }
+            progressValue = "Records found: " + _searchResponse.Data.Results.Count;
+            Showloading = false;
+        }
+        else
+        {
+            progressValue = "Please enter search text else the interweb will be downloaded to your device";
+            Showloading = false;
+        }
+    }
+
+    private async Task CharacterInfo(int characterId)
+    {
+        progressValue = "Loading...";
+        Showloading = true;
+        string hdrDate = "1"; //System.DateTime.Now.ToUniversalTime().ToString("R");
+
+        byte[] encodedPassword = new UTF8Encoding().GetBytes(hdrDate + _pvtapiKey + _apiKey);
+        byte[] hash = ((HashAlgorithm)CryptoConfig.CreateFromName("MD5")).ComputeHash(encodedPassword);
+
+        string encoded = BitConverter.ToString(hash).Replace("-", string.Empty).ToLower();
+
+        var url = $"characters/{characterId}?&ts={hdrDate}&apikey={_apiKey}&hash={encoded}";
+        HttpClient client = new HttpClient();
+        client.BaseAddress = new Uri("https://gateway.marvel.com:443/v1/public/");
+
+        var response = await client.GetAsync(url);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var responseStream = await response.Content.ReadAsStreamAsync();
+            var options = new JsonSerializerOptions()
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+            _characterInfoResponse = await JsonSerializer.DeserializeAsync<CharacterInfoResponse>(responseStream, options);
+        }
+        else
+        {
+            _characterInfoResponse = null;
+        }
+        progressValue = "";
+        Showloading = false;
+        // Open the Popup
+        ShowPopup = true;
+    }
+    void ClosePopup()
+    {
+        // Close the Popup
+        ShowPopup = false;
+    } }
